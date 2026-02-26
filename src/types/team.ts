@@ -10,6 +10,7 @@ export interface TeamMember {
   tmuxPaneId?: string;
   cwd?: string;
   backendType?: string;
+  processId?: string;
 }
 
 export interface TeamMessage {
@@ -38,4 +39,30 @@ export interface TeamState {
   recentMessages: TeamMessage[];
   activeMembers: number;
   inboxPath: string;
+  isRunning?: boolean;
+  processIds?: string[];
+}
+
+// Request types for creating/configuring teams
+export interface TeamMemberConfig {
+  name: string;
+  agentType: string;
+  model: string;
+  color?: string;
+  cwd?: string;
+  backendType?: string;
+  task?: string;
+}
+
+export interface TeamCreateRequest {
+  name: string;
+  description?: string;
+  cwd: string;
+  members: TeamMemberConfig[];
+  env?: Record<string, string>;
+  launchImmediately?: boolean;
+}
+
+export interface TeamLaunchOptions {
+  env?: Record<string, string>;
 }

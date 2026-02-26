@@ -1,20 +1,32 @@
 'use client';
 
+import { useState, useCallback } from 'react';
 import { useEventSource } from '@/hooks/useEventSource';
 import { DashboardLayout, Header } from '@/components/layout';
 import { ProcessList } from '@/components/processes';
 import { ConnectionStatus } from '@/components/connections';
 import { TeamGrid } from '@/components/teams';
 import { MetricCard } from '@/components/common';
+import { TeamCreateDialog } from '@/components/teams/TeamCreateDialog';
 
 export default function Dashboard() {
-  const { state, error, reconnect } = useEventSource();
+  const { state, error, reconnect, refresh } = useEventSource();
+  const [showCreate, setShowCreate] = useState(false);
+
+  const handleTeamsUpdated = useCallback(() => {
+    refresh();
+  }, [refresh]);
+
+  const handleCreated = useCallback(() => {
+    setShowCreate(false);
+    refresh();
+  }, [refresh]);
 
   // Calculate metrics
   const totalProcesses = state.processes.length;
   const totalCpu = state.processes.reduce((sum, p) => sum + p.cpu, 0);
   const totalMemory = state.processes.reduce((sum, p) => sum + p.memory, 0);
-  const activeTeams = state.teams.filter(t => t.activeMembers > 0).length;
+  const activeTeams = state.teams.filter((t) => t.activeMembers > 0 || t.isRunning).length;
   const totalMembers = state.teams.reduce((sum, t) => sum + t.config.members.length, 0);
 
   return (
@@ -66,12 +78,25 @@ export default function Dashboard() {
 
         {/* Teams Section */}
         <section>
-          <h2 className="text-xl font-semibold text-gray-800 mb-4">
-            Agent Teams ({state.teams.length})
-          </h2>
-          <TeamGrid teams={state.teams} />
+          <div className="flex items-center justify-between mb-4">
+            <h2 className="text-xl font-semibold text-gray-800">
+              Agent Teams ({state.teams.length})
+            </h2>
+            <button
+              onClick={() => setShowCreate(true)}
+              className="flex items-center gap-1.5 px-3 py-1.5 text-sm bg-blue-600 hover:bg-blue-500 text-white rounded-lg transition-colors"
+            >
+              <span className="text-base leading-none">+</span>
+              New Team
+            </button>
+          </div>
+          <TeamGrid teams={state.teams} onTeamsUpdated={handleTeamsUpdated} />
         </section>
       </main>
+
+      {showCreate && (
+        <TeamCreateDialog onClose={() => setShowCreate(false)} onCreated={handleCreated} />
+      )}
     </DashboardLayout>
   );
 }

@@ -115,5 +115,10 @@ export function useEventSource() {
     };
   }, [connect]);
 
-  return { state, error, reconnect: connect };
+  // Force an immediate refresh by closing and reopening the SSE connection
+  const refresh = useCallback(() => {
+    connect();
+  }, [connect]);
+
+  return { state, error, reconnect: connect, refresh };
 }

@@ -2,7 +2,18 @@ import { NextRequest } from 'next/server';
 import { getProcesses } from '@/services/process-service';
 import { getProxyStatus } from '@/services/connection-service';
 import { getAllTeamsState } from '@/services/team-service';
+import { TeamOrchestrator } from '@/services/team-orchestrator';
 import { POLL_INTERVAL, HEARTBEAT_INTERVAL } from '@/lib/constants';
+
+async function getTeamsWithStatus() {
+  const teams = await getAllTeamsState();
+  const orchestrator = TeamOrchestrator.getInstance();
+  return teams.map((team) => ({
+    ...team,
+    isRunning: orchestrator.isTeamRunning(team.id),
+    processIds: orchestrator.getTeamProcessIds(team.id),
+  }));
+}
 
 export const runtime = 'nodejs';
 export const dynamic = 'force-dynamic';
@@ -51,7 +62,7 @@ export async function GET(request: NextRequest) {
         const [processes, proxyStatus, teams] = await Promise.all([
           getProcesses(),
           getProxyStatus(15721),
-          getAllTeamsState()
+          getTeamsWithStatus()
         ]);
 
         sendEvent('init', {
@@ -77,7 +88,7 @@ export async function GET(request: NextRequest) {
           const [processes, proxyStatus, teams] = await Promise.all([
             getProcesses(),
             getProxyStatus(15721),
-            getAllTeamsState()
+            getTeamsWithStatus()
           ]);
 
           sendEvent('update', {
