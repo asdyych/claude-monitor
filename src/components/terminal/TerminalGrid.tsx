@@ -1,6 +1,6 @@
 'use client';
 
-import { useState, useCallback } from 'react';
+import { useState, useCallback, useEffect } from 'react';
 import dynamic from 'next/dynamic';
 import { ManagedProcess } from '@/types/managed-process';
 
@@ -13,6 +13,8 @@ const TerminalView = dynamic(
 interface TerminalGridProps {
   processes: ManagedProcess[];
   onClose?: () => void;
+  /** Auto-focus terminal belonging to this member when a dispatch is running */
+  activeMemberName?: string | null;
 }
 
 type GridLayout = '1x1' | '1x2' | '2x1' | '2x2' | '2x3' | '3x2';
@@ -40,10 +42,18 @@ function getAutoLayout(count: number): GridLayout {
   return '3x2';
 }
 
-export function TerminalGrid({ processes, onClose }: TerminalGridProps) {
+export function TerminalGrid({ processes, onClose, activeMemberName }: TerminalGridProps) {
   const [focusedId, setFocusedId] = useState<string | null>(processes[0]?.id ?? null);
   const [maximizedId, setMaximizedId] = useState<string | null>(null);
   const [layout, setLayout] = useState<GridLayout>(() => getAutoLayout(processes.length));
+
+  // Auto-focus the terminal of the member currently executing a dispatched task.
+  // Skip auto-focus if user has manually maximized a terminal.
+  useEffect(() => {
+    if (!activeMemberName || maximizedId) return;
+    const match = processes.find((p) => p.memberName === activeMemberName);
+    if (match) setFocusedId(match.id);
+  }, [activeMemberName, processes, maximizedId]);
 
   const handleFocus = useCallback((id: string) => {
     setFocusedId(id);

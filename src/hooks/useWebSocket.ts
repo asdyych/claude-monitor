@@ -172,6 +172,11 @@ export function useWebSocket() {
     [send]
   );
 
+  const sendToLeader = useCallback(
+    (teamId: string, text: string) => send({ type: 'send_to_leader', teamId, text }),
+    [send]
+  );
+
   // Expose reconnect for manual trigger (e.g. "Reconnect" button)
   const reconnect = useCallback(() => {
     manager.disconnect();
@@ -184,6 +189,7 @@ export function useWebSocket() {
     unsubscribe,
     sendInput,
     sendResize,
+    sendToLeader,
     addMessageHandler,
     reconnect,
   };

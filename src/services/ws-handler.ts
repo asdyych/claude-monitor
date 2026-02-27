@@ -2,6 +2,7 @@
 import { WebSocket, WebSocketServer } from 'ws';
 import { IncomingMessage } from 'http';
 import { PtyManager } from './pty-manager';
+import { TeamOrchestrator } from './team-orchestrator';
 import { ClientMessage, ServerMessage, ProcessSummary } from '@/types/ws';
 import { ManagedProcess } from '@/types/managed-process';
 
@@ -34,6 +35,7 @@ const _gWs = globalThis as typeof globalThis & { __wsHandlerInstance?: WsHandler
 export class WsHandler {
   private wss: WebSocketServer;
   private ptyManager: PtyManager;
+  private teamOrchestrator: TeamOrchestrator;
   // Map from processId -> Set of subscribed WebSockets
   private subscriptions = new Map<string, Set<WebSocket>>();
   // Map from WebSocket -> Set of processIds it's subscribed to
@@ -44,6 +46,7 @@ export class WsHandler {
   constructor(wss: WebSocketServer) {
     this.wss = wss;
     this.ptyManager = PtyManager.getInstance();
+    this.teamOrchestrator = TeamOrchestrator.getInstance();
     this.setupGlobalListeners();
     this.wss.on('connection', this.handleConnection.bind(this));
     console.log('🔌 [WsHandler] WebSocket handler initialized');
@@ -66,6 +69,18 @@ export class WsHandler {
         processId: id,
         memberName: proc.memberName,
         teamId: proc.teamId,
+      };
+      this.wss.clients.forEach((ws) => safeSend(ws, msg));
+    });
+
+    this.teamOrchestrator.onDispatchUpdate((update) => {
+      const msg: ServerMessage = {
+        type: 'dispatch_update',
+        teamId: update.teamId,
+        taskId: update.taskId,
+        memberName: update.memberName,
+        status: update.status,
+        detail: update.detail,
       };
       this.wss.clients.forEach((ws) => safeSend(ws, msg));
     });
@@ -114,8 +129,41 @@ export class WsHandler {
       case 'resize':
         this.handleResize(msg.processId, msg.cols, msg.rows);
         break;
+      case 'send_to_leader':
+        this.handleSendToLeader(ws, msg.teamId, msg.text);
+        break;
       default:
         safeSend(ws, { type: 'error', message: 'Unknown message type' });
+    }
+  }
+
+  private handleSendToLeader(ws: WebSocket, teamId: string, text: string): void {
+    try {
+      const leaderProcessId = this.teamOrchestrator.getLeaderProcessId(teamId);
+      if (!leaderProcessId) {
+        safeSend(ws, {
+          type: 'leader_ack',
+          teamId,
+          accepted: false,
+          message: `Leader process not found for team "${teamId}"`,
+        });
+        return;
+      }
+
+      const result = this.teamOrchestrator.sendUserMessageToLeader(teamId, text);
+      safeSend(ws, {
+        type: 'leader_ack',
+        teamId,
+        accepted: result.accepted,
+        message: result.message,
+      });
+    } catch (err) {
+      safeSend(ws, {
+        type: 'leader_ack',
+        teamId,
+        accepted: false,
+        message: `Failed to send message: ${String(err)}`,
+      });
     }
   }
 

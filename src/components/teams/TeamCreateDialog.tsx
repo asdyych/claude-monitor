@@ -1,7 +1,9 @@
 'use client';
 
-import { useState, useCallback } from 'react';
+import { useState, useCallback, useEffect } from 'react';
 import { TeamCreateRequest, TeamMemberConfig } from '@/types/team';
+import { useSettings } from '@/hooks/useSettings';
+import { PathInput } from '@/components/settings/PathInput';
 
 interface TeamCreateDialogProps {
   onClose: () => void;
@@ -22,6 +24,30 @@ const MEMBER_COLORS = [
   '#bc8cff', '#39d353', '#ffa657', '#f78166',
 ];
 
+function SaveDefaultButton({ cwd }: { cwd: string }) {
+  const [saved, setSaved] = useState(false);
+
+  const handleSave = async () => {
+    await fetch('/api/settings', {
+      method: 'PUT',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ defaultCwd: cwd }),
+    });
+    setSaved(true);
+    setTimeout(() => setSaved(false), 2000);
+  };
+
+  return (
+    <button
+      type="button"
+      onClick={handleSave}
+      className="text-xs text-blue-500 hover:text-blue-400 transition-colors"
+    >
+      {saved ? '✓ Saved' : 'Save as default'}
+    </button>
+  );
+}
+
 function createEmptyMember(index: number): TeamMemberConfig {
   return {
     name: `Agent ${index + 1}`,
@@ -34,6 +60,7 @@ function createEmptyMember(index: number): TeamMemberConfig {
 }
 
 export function TeamCreateDialog({ onClose, onCreated }: TeamCreateDialogProps) {
+  const { settings, loading: settingsLoading } = useSettings();
   const [name, setName] = useState('');
   const [description, setDescription] = useState('');
   const [cwd, setCwd] = useState('');
@@ -44,6 +71,13 @@ export function TeamCreateDialog({ onClose, onCreated }: TeamCreateDialogProps) 
   const [launchImmediately, setLaunchImmediately] = useState(true);
   const [submitting, setSubmitting] = useState(false);
   const [error, setError] = useState<string | null>(null);
+
+  // Pre-fill working directory from saved settings (only on first load)
+  useEffect(() => {
+    if (!settingsLoading && settings.defaultCwd && !cwd) {
+      setCwd(settings.defaultCwd);
+    }
+  }, [settingsLoading, settings.defaultCwd, cwd]);
 
   const addMember = useCallback(() => {
     setMembers((prev) => [...prev, createEmptyMember(prev.length)]);
@@ -142,14 +176,13 @@ export function TeamCreateDialog({ onClose, onCreated }: TeamCreateDialogProps) 
               />
             </div>
             <div>
-              <label className="block text-xs text-gray-400 mb-1">Working Directory *</label>
-              <input
-                type="text"
-                value={cwd}
-                onChange={(e) => setCwd(e.target.value)}
-                placeholder="e.g. /home/user/project or C:\Users\user\project"
-                className="w-full bg-gray-800 border border-gray-600 rounded px-3 py-2 text-sm text-white font-mono placeholder-gray-500 focus:outline-none focus:border-blue-500"
-              />
+              <div className="flex items-center justify-between mb-1">
+                <label className="text-xs text-gray-400">Working Directory *</label>
+                {cwd.trim() && cwd.trim() !== settings.defaultCwd && (
+                  <SaveDefaultButton cwd={cwd.trim()} />
+                )}
+              </div>
+              <PathInput value={cwd} onChange={setCwd} />
             </div>
           </div>
 

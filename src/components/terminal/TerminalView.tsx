@@ -34,6 +34,8 @@ export function TerminalView({ processId, memberName, focused, onFocus }: Termin
   const containerRef = useRef<HTMLDivElement>(null);
   const termRef = useRef<XTerminal | null>(null);
   const fitAddonRef = useRef<FitAddon | null>(null);
+  // Pre-mount buffer: messages that arrive before xterm is ready
+  const pendingChunks = useRef<string[]>([]);
   const { subscribe, unsubscribe, sendInput, sendResize, addMessageHandler } = useWebSocket();
 
   const fitTerminal = useCallback(() => {
@@ -50,13 +52,41 @@ export function TerminalView({ processId, memberName, focused, onFocus }: Termin
   useEffect(() => {
     if (!containerRef.current) return;
 
+    // `active` guards against React Strict Mode double-invocation: when the
+    // cleanup runs before the async loadXterm() resolves, we mark this effect
+    // instance as stale so the resolved promise won't create a second xterm.
+    let active = true;
     let term: XTerminal;
     let fitAddon: FitAddon;
     let resizeObserver: ResizeObserver;
-    let removeHandler: (() => void) | undefined;
+
+    // Subscribe & register handler BEFORE loading xterm so no output is missed.
+    // Chunks arriving before the terminal is ready are buffered in pendingChunks.
+    subscribe(processId);
+
+    const removeHandler = addMessageHandler((msg: ServerMessage) => {
+      // Only messages with a processId field are relevant here
+      if (!('processId' in msg) || msg.processId !== processId) return;
+
+      if (msg.type === 'history' || msg.type === 'output') {
+        if (termRef.current) {
+          termRef.current.write(msg.data);
+        } else {
+          pendingChunks.current.push(msg.data);
+        }
+      } else if (msg.type === 'process_exit') {
+        const exitMsg = `\r\n\x1b[33m[Process exited with code ${msg.exitCode}]\x1b[0m`;
+        if (termRef.current) {
+          termRef.current.writeln(exitMsg);
+        } else {
+          pendingChunks.current.push(exitMsg);
+        }
+      }
+    });
 
     loadXterm().then(() => {
-      if (!containerRef.current) return;
+      // Bail out if cleanup already ran (Strict Mode) or container was removed
+      if (!active || !containerRef.current) return;
 
       term = new XTermClass({
         fontFamily: '"JetBrains Mono", "Fira Code", "Cascadia Code", Menlo, monospace',
@@ -97,23 +127,15 @@ export function TerminalView({ processId, memberName, focused, onFocus }: Termin
       termRef.current = term;
       fitAddonRef.current = fitAddon;
 
+      // Flush any output that arrived before xterm was ready
+      const buffered = pendingChunks.current.splice(0);
+      for (const chunk of buffered) {
+        term.write(chunk);
+      }
+
       // Forward keyboard input via WebSocket
       term.onData((data: string) => {
         sendInput(processId, data);
-      });
-
-      // Subscribe to process output
-      subscribe(processId);
-
-      // Handle incoming messages
-      removeHandler = addMessageHandler((msg: ServerMessage) => {
-        if (msg.type === 'history' && msg.processId === processId) {
-          term.write(msg.data);
-        } else if (msg.type === 'output' && msg.processId === processId) {
-          term.write(msg.data);
-        } else if (msg.type === 'process_exit' && msg.processId === processId) {
-          term.writeln(`\r\n\x1b[33m[Process exited with code ${msg.exitCode}]\x1b[0m`);
-        }
       });
 
       // Auto-resize on container size change
@@ -124,10 +146,14 @@ export function TerminalView({ processId, memberName, focused, onFocus }: Termin
     });
 
     return () => {
-      removeHandler?.();
+      active = false;
+      removeHandler();
       unsubscribe(processId);
+      pendingChunks.current = [];
       resizeObserver?.disconnect();
       term?.dispose();
+      termRef.current = null;
+      fitAddonRef.current = null;
     };
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [processId]);

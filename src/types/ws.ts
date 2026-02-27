@@ -5,7 +5,8 @@ export type ClientMessage =
   | { type: 'subscribe'; processId: string }
   | { type: 'unsubscribe'; processId: string }
   | { type: 'input'; processId: string; data: string }
-  | { type: 'resize'; processId: string; cols: number; rows: number };
+  | { type: 'resize'; processId: string; cols: number; rows: number }
+  | { type: 'send_to_leader'; teamId: string; text: string };
 
 // Server -> Client messages
 export type ServerMessage =
@@ -14,6 +15,15 @@ export type ServerMessage =
   | { type: 'process_exit'; processId: string; exitCode: number }
   | { type: 'process_started'; processId: string; memberName: string; teamId: string }
   | { type: 'process_list'; processes: ProcessSummary[] }
+  | { type: 'leader_ack'; teamId: string; accepted: boolean; message: string }
+  | {
+      type: 'dispatch_update';
+      teamId: string;
+      taskId: string;
+      memberName: string;
+      status: 'queued' | 'running' | 'succeeded' | 'failed';
+      detail?: string;
+    }
   | { type: 'error'; message: string };
 
 export interface ProcessSummary {
